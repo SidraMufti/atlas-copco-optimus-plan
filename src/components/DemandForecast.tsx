@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { TrendingUp, Calendar, AlertTriangle } from 'lucide-react';
 
 const DemandForecast = () => {
@@ -184,11 +184,11 @@ const DemandForecast = () => {
                 <XAxis dataKey="month" />
                 <YAxis />
                 <Tooltip />
-                <Bar 
-                  dataKey="stockLevel" 
-                  fill={(entry) => entry < 0 ? "#ef4444" : "#10b981"}
-                  name="Projected Stock Level"
-                />
+                <Bar dataKey="stockLevel" name="Projected Stock Level">
+                  {itemData[selectedItem].forecast.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.stockLevel < 0 ? "#ef4444" : "#10b981"} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
