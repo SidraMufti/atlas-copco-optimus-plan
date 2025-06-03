@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +10,7 @@ import { Settings, Play, DollarSign, Clock, TrendingUp, Package } from 'lucide-r
 const OptimizationScenario = () => {
   const [optimizationMode, setOptimizationMode] = useState('totalCost');
   const [simulationWeeks, setSimulationWeeks] = useState('12');
+  const [simulationTrigger, setSimulationTrigger] = useState(0);
 
   // Extended item data with material costs and specs
   const items = [
@@ -94,6 +94,10 @@ const OptimizationScenario = () => {
   const STOCK_COST_RATE = 0.10; // 10% yearly
   const WEEKLY_OPERATION_HOURS = 5 * 24; // 5 days × 24 hours
   const WEEKS_PER_YEAR = 52;
+
+  const handleRunSimulation = () => {
+    setSimulationTrigger(prev => prev + 1);
+  };
 
   // Advanced optimization algorithm
   const optimizedScenario = useMemo(() => {
@@ -197,7 +201,7 @@ const OptimizationScenario = () => {
     });
     
     return { results, weeklyStockCosts };
-  }, [optimizationMode, simulationWeeks]);
+  }, [optimizationMode, simulationWeeks, simulationTrigger]);
 
   const totalScenarioCost = optimizedScenario.results.reduce((sum, item) => sum + item.totalCost, 0);
   const totalMaterialCost = optimizedScenario.results.reduce((sum, item) => sum + item.materialCost, 0);
@@ -250,7 +254,7 @@ const OptimizationScenario = () => {
                 </SelectContent>
               </Select>
               
-              <Button>
+              <Button onClick={handleRunSimulation}>
                 <Play className="w-4 h-4 mr-2" />
                 Run Simulation
               </Button>
