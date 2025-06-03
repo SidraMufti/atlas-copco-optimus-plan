@@ -129,10 +129,21 @@ const OptimizationScenario = () => {
         
         const setupTime = RAW_MATERIAL_CHANGE_TIME + toolChangeTime;
         
-        // Dynamic lot sizing based on demand and setup costs
-        const setupCostPerBatch = (setupTime / 60) * machine.costPerHour;
-        const optimalLotSize = Math.sqrt((2 * requiredProduction * setupCostPerBatch) / 
-          (item.itemCost * STOCK_COST_RATE / WEEKS_PER_YEAR));
+        // Dynamic lot sizing based on optimization mode
+        let optimalLotSize;
+        if (optimizationMode === 'resources') {
+          // Optimize for material efficiency and equipment utilization
+          // Larger lot sizes reduce material waste and setup frequency
+          const materialEfficiencyFactor = 1.2; // Favor larger lots for material efficiency
+          const equipmentUtilizationFactor = machine.efficiency; // Use machine efficiency
+          optimalLotSize = Math.sqrt((2 * requiredProduction * setupTime * materialEfficiencyFactor * equipmentUtilizationFactor) / 
+            (item.materialWeight * 0.5)); // Weight material usage heavily
+        } else {
+          // Original cost-based optimization
+          const setupCostPerBatch = (setupTime / 60) * machine.costPerHour;
+          optimalLotSize = Math.sqrt((2 * requiredProduction * setupCostPerBatch) / 
+            (item.itemCost * STOCK_COST_RATE / WEEKS_PER_YEAR));
+        }
         
         const finalLotSize = Math.max(50, Math.min(500, Math.round(optimalLotSize)));
         const numberOfBatches = Math.ceil(requiredProduction / finalLotSize);
@@ -142,11 +153,22 @@ const OptimizationScenario = () => {
         const totalSetupTime = numberOfBatches * setupTime;
         const totalTime = productionTime + totalSetupTime;
         
+        // Calculate material efficiency metrics
+        const totalMaterialNeeded = requiredProduction * item.materialWeight;
+        const materialWastePercentage = Math.max(0, 5 - (finalLotSize / 100)); // Larger lots = less waste
+        const actualMaterialUsed = totalMaterialNeeded * (1 + materialWastePercentage / 100);
+        
+        // Calculate equipment utilization score
+        const equipmentUtilizationScore = (productionTime / totalTime) * machine.efficiency * 100;
+        
         // Calculate costs
         const machineCost = (totalTime / 60) * machine.costPerHour;
-        const materialCost = requiredProduction * item.materialWeight * STEEL_COST_PER_KG;
+        const materialCost = actualMaterialUsed * STEEL_COST_PER_KG;
         const stockKeepingCost = (finalLotSize / 2) * item.itemCost * (STOCK_COST_RATE / WEEKS_PER_YEAR) * parseInt(simulationWeeks);
         const totalCost = machineCost + materialCost + stockKeepingCost;
+        
+        // Resource efficiency score (for resource optimization)
+        const resourceEfficiencyScore = (equipmentUtilizationScore * 0.6) + ((100 - materialWastePercentage) * 0.4);
         
         return {
           machineId: machine.id,
@@ -162,7 +184,11 @@ const OptimizationScenario = () => {
           stockKeepingCost: Math.round(stockKeepingCost),
           totalCost: Math.round(totalCost),
           efficiency: machine.efficiency,
-          costPerUnit: Math.round((totalCost / requiredProduction) * 100) / 100
+          costPerUnit: Math.round((totalCost / requiredProduction) * 100) / 100,
+          materialWastePercentage: Math.round(materialWastePercentage * 10) / 10,
+          equipmentUtilizationScore: Math.round(equipmentUtilizationScore),
+          resourceEfficiencyScore: Math.round(resourceEfficiencyScore),
+          actualMaterialUsed: Math.round(actualMaterialUsed * 10) / 10
         };
       }).filter(Boolean);
       
@@ -179,6 +205,11 @@ const OptimizationScenario = () => {
       } else if (optimizationMode === 'material') {
         selectedOption = machineOptions.reduce((best, current) => 
           current.materialCost < best.materialCost ? current : best
+        );
+      } else if (optimizationMode === 'resources') {
+        // Optimize for resource efficiency (equipment + material)
+        selectedOption = machineOptions.reduce((best, current) => 
+          current.resourceEfficiencyScore > best.resourceEfficiencyScore ? current : best
         );
       }
       
@@ -224,6 +255,11 @@ const OptimizationScenario = () => {
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
+  // Calculate resource efficiency metrics
+  const avgMaterialWaste = optimizedScenario.results.reduce((sum, item) => sum + item.materialWastePercentage, 0) / optimizedScenario.results.length;
+  const avgEquipmentUtilization = optimizedScenario.results.reduce((sum, item) => sum + item.equipmentUtilizationScore, 0) / optimizedScenario.results.length;
+  const totalMaterialUsed = optimizedScenario.results.reduce((sum, item) => sum + item.actualMaterialUsed, 0);
+
   return (
     <div className="space-y-6">
       <Card className="border-0 shadow-sm">
@@ -239,6 +275,7 @@ const OptimizationScenario = () => {
                   <SelectItem value="totalCost">Total Cost</SelectItem>
                   <SelectItem value="time">Production Time</SelectItem>
                   <SelectItem value="material">Material Efficiency</SelectItem>
+                  <SelectItem value="resources">Equipment & Materials</SelectItem>
                 </SelectContent>
               </Select>
               
@@ -263,49 +300,99 @@ const OptimizationScenario = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="p-4">
-                <div className="flex items-center space-x-2">
-                  <DollarSign className="w-5 h-5 text-blue-600" />
-                  <span className="font-semibold text-blue-900">Total Cost</span>
-                </div>
-                <p className="text-2xl font-bold text-blue-900">${totalScenarioCost.toLocaleString()}</p>
-                <p className="text-sm text-blue-700">{simulationWeeks} weeks simulation</p>
-              </CardContent>
-            </Card>
+            {optimizationMode === 'resources' ? (
+              <>
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Settings className="w-5 h-5 text-blue-600" />
+                      <span className="font-semibold text-blue-900">Avg Equipment Util.</span>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-900">{Math.round(avgEquipmentUtilization)}%</p>
+                    <p className="text-sm text-blue-700">Machine efficiency</p>
+                  </CardContent>
+                </Card>
 
-            <Card className="bg-green-50 border-green-200">
-              <CardContent className="p-4">
-                <div className="flex items-center space-x-2">
-                  <Package className="w-5 h-5 text-green-600" />
-                  <span className="font-semibold text-green-900">Material Cost</span>
-                </div>
-                <p className="text-2xl font-bold text-green-900">${totalMaterialCost.toLocaleString()}</p>
-                <p className="text-sm text-green-700">{Math.round((totalMaterialCost/totalScenarioCost)*100)}% of total</p>
-              </CardContent>
-            </Card>
+                <Card className="bg-green-50 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Package className="w-5 h-5 text-green-600" />
+                      <span className="font-semibold text-green-900">Material Waste</span>
+                    </div>
+                    <p className="text-2xl font-bold text-green-900">{Math.round(avgMaterialWaste * 10) / 10}%</p>
+                    <p className="text-sm text-green-700">Raw material loss</p>
+                  </CardContent>
+                </Card>
 
-            <Card className="bg-orange-50 border-orange-200">
-              <CardContent className="p-4">
-                <div className="flex items-center space-x-2">
-                  <Clock className="w-5 h-5 text-orange-600" />
-                  <span className="font-semibold text-orange-900">Stock Cost</span>
-                </div>
-                <p className="text-2xl font-bold text-orange-900">${totalStockCost.toLocaleString()}</p>
-                <p className="text-sm text-orange-700">{Math.round((totalStockCost/totalScenarioCost)*100)}% of total</p>
-              </CardContent>
-            </Card>
+                <Card className="bg-orange-50 border-orange-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <TrendingUp className="w-5 h-5 text-orange-600" />
+                      <span className="font-semibold text-orange-900">Total Material</span>
+                    </div>
+                    <p className="text-2xl font-bold text-orange-900">{totalMaterialUsed} kg</p>
+                    <p className="text-sm text-orange-700">Steel required</p>
+                  </CardContent>
+                </Card>
 
-            <Card className="bg-purple-50 border-purple-200">
-              <CardContent className="p-4">
-                <div className="flex items-center space-x-2">
-                  <Settings className="w-5 h-5 text-purple-600" />
-                  <span className="font-semibold text-purple-900">Machine Cost</span>
-                </div>
-                <p className="text-2xl font-bold text-purple-900">${totalMachineCost.toLocaleString()}</p>
-                <p className="text-sm text-purple-700">{Math.round((totalMachineCost/totalScenarioCost)*100)}% of total</p>
-              </CardContent>
-            </Card>
+                <Card className="bg-purple-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Clock className="w-5 h-5 text-purple-600" />
+                      <span className="font-semibold text-purple-900">Setup Changes</span>
+                    </div>
+                    <p className="text-2xl font-bold text-purple-900">{optimizedScenario.results.reduce((sum, item) => sum + item.numberOfBatches, 0)}</p>
+                    <p className="text-sm text-purple-700">Total batches</p>
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <>
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <DollarSign className="w-5 h-5 text-blue-600" />
+                      <span className="font-semibold text-blue-900">Total Cost</span>
+                    </div>
+                    <p className="text-2xl font-bold text-blue-900">${totalScenarioCost.toLocaleString()}</p>
+                    <p className="text-sm text-blue-700">{simulationWeeks} weeks simulation</p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-green-50 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Package className="w-5 h-5 text-green-600" />
+                      <span className="font-semibold text-green-900">Material Cost</span>
+                    </div>
+                    <p className="text-2xl font-bold text-green-900">${totalMaterialCost.toLocaleString()}</p>
+                    <p className="text-sm text-green-700">{Math.round((totalMaterialCost/totalScenarioCost)*100)}% of total</p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-orange-50 border-orange-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Clock className="w-5 h-5 text-orange-600" />
+                      <span className="font-semibold text-orange-900">Stock Cost</span>
+                    </div>
+                    <p className="text-2xl font-bold text-orange-900">${totalStockCost.toLocaleString()}</p>
+                    <p className="text-sm text-orange-700">{Math.round((totalStockCost/totalScenarioCost)*100)}% of total</p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-purple-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center space-x-2">
+                      <Settings className="w-5 h-5 text-purple-600" />
+                      <span className="font-semibold text-purple-900">Machine Cost</span>
+                    </div>
+                    <p className="text-2xl font-bold text-purple-900">${totalMachineCost.toLocaleString()}</p>
+                    <p className="text-sm text-purple-700">{Math.round((totalMachineCost/totalScenarioCost)*100)}% of total</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
           </div>
 
           <Tabs defaultValue="optimization" className="space-y-4">
@@ -327,8 +414,17 @@ const OptimizationScenario = () => {
                       <th className="text-left p-4 font-semibold">Batches</th>
                       <th className="text-left p-4 font-semibold">Tool Changes</th>
                       <th className="text-left p-4 font-semibold">Setup Time</th>
-                      <th className="text-left p-4 font-semibold">Total Cost</th>
-                      <th className="text-left p-4 font-semibold">Cost/Unit</th>
+                      {optimizationMode === 'resources' ? (
+                        <>
+                          <th className="text-left p-4 font-semibold">Material Waste</th>
+                          <th className="text-left p-4 font-semibold">Equipment Util.</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="text-left p-4 font-semibold">Total Cost</th>
+                          <th className="text-left p-4 font-semibold">Cost/Unit</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -347,8 +443,17 @@ const OptimizationScenario = () => {
                         <td className="p-4">{item.numberOfBatches}</td>
                         <td className="p-4">{item.toolChangesNeeded}</td>
                         <td className="p-4">{item.setupTime} min</td>
-                        <td className="p-4">${item.totalCost.toLocaleString()}</td>
-                        <td className="p-4">${item.costPerUnit}</td>
+                        {optimizationMode === 'resources' ? (
+                          <>
+                            <td className="p-4">{item.materialWastePercentage}%</td>
+                            <td className="p-4">{item.equipmentUtilizationScore}%</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="p-4">${item.totalCost.toLocaleString()}</td>
+                            <td className="p-4">${item.costPerUnit}</td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -440,7 +545,7 @@ const OptimizationScenario = () => {
                         </div>
                         <div className="flex justify-between">
                           <span>Material Efficiency:</span>
-                          <span className="font-semibold">95.2%</span>
+                          <span className="font-semibold">{Math.round((100 - avgMaterialWaste) * 10) / 10}%</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Setup vs Production:</span>
@@ -523,7 +628,7 @@ const OptimizationScenario = () => {
                         <p className="text-sm">Stock Reduction</p>
                       </div>
                       <div>
-                        <p className="text-2xl font-bold">95.2%</p>
+                        <p className="text-2xl font-bold">{Math.round((100 - avgMaterialWaste) * 10) / 10}%</p>
                         <p className="text-sm">Material Efficiency</p>
                       </div>
                     </div>
